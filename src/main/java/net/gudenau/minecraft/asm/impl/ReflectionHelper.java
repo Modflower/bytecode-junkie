@@ -49,9 +49,9 @@ public class ReflectionHelper{
         for(long cookie = 0; cookie < 64; cookie += 4){
             int original = UnsafeHelper.getInt(object, cookie);
             object.setAccessible(true);
-            if(original != UnsafeHelper.getInt(object, cookie)){
+            if (original != UnsafeHelper.getInt(object, cookie)) {
                 UnsafeHelper.putInt(object, cookie, original);
-                if(!object.isAccessible()){
+                if (!object.isAccessible()) {
                     return cookie;
                 }
             }
@@ -59,64 +59,75 @@ public class ReflectionHelper{
         }
         return -1;
     }
-    
-    private static void forceSetAccessible(AccessibleObject object, boolean accessible){
+
+    private static void forceSetAccessible(AccessibleObject object, boolean accessible) {
         UnsafeHelper.putInt(object, AccessibleObject$override, accessible ? 1 : 0);
     }
-    
-    public static MethodHandle findGetter(Class<?> owner, String name, Class<?> type) throws ReflectiveOperationException{
+
+    public static Field findField(Class<?> owner, String name) {
+        for (Field field : owner.getDeclaredFields()) {
+            if (name.equals(field.getName())) return field;
+        }
+        return null;
+    }
+
+    public static MethodHandle findGetter(Class<?> owner, String name, Class<?> type) throws ReflectiveOperationException {
         return IMPL_LOOKUP.findGetter(owner, name, type);
     }
-    
-    public static <O, T extends O> MethodHandle findGetter(Class<T> owner, O instance, String name, Class<?> type) throws ReflectiveOperationException{
+
+    public static <O, T extends O> MethodHandle findGetter(Class<T> owner, O instance, String name, Class<?> type) throws ReflectiveOperationException {
         return IMPL_LOOKUP.findGetter(owner, name, type).bindTo(instance);
     }
-    
-    public static MethodHandle findStaticGetter(Class<?> owner, String name, Class<?> type) throws ReflectiveOperationException{
+
+    public static MethodHandle findStaticGetter(Class<?> owner, String name, Class<?> type) throws ReflectiveOperationException {
         return IMPL_LOOKUP.findStaticGetter(owner, name, type);
     }
-    
-    public static MethodHandle findSetter(Class<?> owner, String name, Class<?> type) throws ReflectiveOperationException{
+
+    public static MethodHandle findSetter(Class<?> owner, String name, Class<?> type) throws ReflectiveOperationException {
         return IMPL_LOOKUP.findSetter(owner, name, type);
     }
-    
-    public static <O, T extends O> MethodHandle findSetter(Class<T> owner, O instance, String name, Class<?> type) throws ReflectiveOperationException{
+
+    public static <O, T extends O> MethodHandle findSetter(Class<T> owner, O instance, String name, Class<?> type) throws ReflectiveOperationException {
         return IMPL_LOOKUP.findSetter(owner, name, type).bindTo(instance);
     }
-    
-    public static MethodHandle findStaticSetter(Class<?> owner, String name, Class<?> type) throws ReflectiveOperationException{
+
+    public static MethodHandle findStaticSetter(Class<?> owner, String name, Class<?> type) throws ReflectiveOperationException {
         return IMPL_LOOKUP.findStaticSetter(owner, name, type);
     }
-    
-    public static <T> Class<T> loadClass(String name) throws ReflectiveOperationException{
+
+    public static <T> Class<T> loadClass(String name) throws ReflectiveOperationException {
         return loadClass(ReflectionHelper.class.getClassLoader(), name);
     }
-    
+
     @SuppressWarnings("unchecked")
-    public static <T> Class<T> loadClass(ClassLoader loader, String name) throws ReflectiveOperationException{
-        return (Class<T>)loader.loadClass(name);
+    public static <T> Class<T> loadClass(ClassLoader loader, String name) throws ReflectiveOperationException {
+        return (Class<T>) loader.loadClass(name);
     }
-    
-    public static <O, T extends O> MethodHandle findVirtual(Class<T> owner, O instance, String name, MethodType type) throws ReflectiveOperationException{
+
+    public static void ensureClassInitialised(Class<?> type) {
+        UnsafeHelper.ensureClassInitialized(type);
+    }
+
+    public static <O, T extends O> MethodHandle findVirtual(Class<T> owner, O instance, String name, MethodType type) throws ReflectiveOperationException {
         return IMPL_LOOKUP.findVirtual(owner, name, type).bindTo(instance);
     }
-    
-    public static MethodHandle findStatic(Class<?> owner, String name, Class<?> returnType, Class<?>... params) throws ReflectiveOperationException{
+
+    public static MethodHandle findStatic(Class<?> owner, String name, Class<?> returnType, Class<?>... params) throws ReflectiveOperationException {
         return IMPL_LOOKUP.findStatic(
-            owner,
-            name,
-            MethodType.methodType(returnType, params)
+                owner,
+                name,
+                MethodType.methodType(returnType, params)
         );
     }
-    
-    private static final class UnsafeHelper{
+
+    private static final class UnsafeHelper {
         private static final Class<?> Unsafe = loadUnsafe();
         private static final Object theUnsafe = getUnsafe();
-        
-        private static Class<?> loadUnsafe(){
-            try{
+
+        private static Class<?> loadUnsafe() {
+            try {
                 return loadClass("sun.misc.Unsafe");
-            }catch(ReflectiveOperationException e2){
+            } catch (ReflectiveOperationException e2) {
                 System.err.println("Failed to load Unsafe class");
                 e2.printStackTrace();
                 System.exit(0);
@@ -148,25 +159,39 @@ public class ReflectionHelper{
                     method.getName().equals(name) &&
                     Arrays.equals(arguments, method.getParameterTypes())
                 ){
-                    try{
+                    try {
                         method.setAccessible(true);
                         MethodHandle handle = MethodHandles.lookup().unreflect(method);
                         return handle.bindTo(theUnsafe);
-                    }catch(ReflectiveOperationException ignored){}
+                    } catch (ReflectiveOperationException ignored) {
+                    }
                 }
             }
-            
+
             System.err.println("Failed to find Unsafe." + name);
             System.exit(0);
             return null;
         }
-        
+
+        private static final MethodHandle ensureClassInitialized = findMethod("ensureClassInitialized", Class.class);
+
+        static void ensureClassInitialized(Class<?> type) {
+            try {
+                ensureClassInitialized.invokeExact(type);
+            } catch (Throwable throwable) {
+                System.err.println("Failed to ensure initialisation of " + type.getName());
+                throwable.printStackTrace();
+                System.exit(0);
+            }
+        }
+
         private static final MethodHandle allocateInstance = findMethod("allocateInstance", Class.class);
+
         @SuppressWarnings("unchecked")
-        static <T> T allocateInstance(Class<T> type){
-            try{
-                return (T)((Object)allocateInstance.invokeExact(type));
-            }catch(Throwable throwable){
+        static <T> T allocateInstance(Class<T> type) {
+            try {
+                return (T) ((Object) allocateInstance.invokeExact(type));
+            } catch (Throwable throwable) {
                 System.err.println("Failed to allocate " + type.getName());
                 throwable.printStackTrace();
                 System.exit(0);

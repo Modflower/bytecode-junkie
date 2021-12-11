@@ -1,23 +1,5 @@
 package net.gudenau.minecraft.asm.impl;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.lang.invoke.MethodHandle;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.security.ProtectionDomain;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Supplier;
 import net.fabricmc.loader.api.FabricLoader;
 import net.gudenau.minecraft.asm.api.v1.AsmUtils;
 import net.gudenau.minecraft.asm.api.v1.ClassCache;
@@ -30,77 +12,62 @@ import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.transformer.FabricMixinTransformerProxy;
 import org.spongepowered.asm.mixin.transformer.IMixinTransformer;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.security.ProtectionDomain;
+import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
+
 /**
  * Our custom "mixin" transformer.
- * */
-public class MixinTransformer extends FabricMixinTransformerProxy{
-    private static final Type ANNOTATION_FORCE_BOOTLOADER = Type.getObjectType("net/gudenau/minecraft/asm/api/v0/annotation/ForceBootloader");
-    
+ */
+public class MixinTransformer extends FabricMixinTransformerProxy {
+    private static final Type ANNOTATION_FORCE_BOOTLOADER = Type.getObjectType("net/gudenau/minecraft/asm/api/v1/annotation/ForceBootloader");
+
     private static final Set<String> BLACKLIST = new HashSet<>(Arrays.asList(
-        "net.gudenau.minecraft.asm.",
-        "org.objectweb.asm.",
-        "com.google.gson.",
-        "org.lwjgl.",
-        "it.unimi.dsi.fastutil."
+            "net.gudenau.minecraft.asm.",
+            "org.objectweb.asm.",
+            "com.google.gson.",
+            "org.lwjgl.",
+            "it.unimi.dsi.fastutil."
     ));
-    
+
     private static final Transformer BOOTSTRAP_TRANSFORMER = new BootstrapTransformer();
-    
-    private static final MethodHandle ClassLoader$defineClass;
-    static{
-        try{
-            ClassLoader$defineClass = ReflectionHelper.findStatic(
-                ClassLoader.class,
-                "defineClass1",
-                Class.class,
-                ClassLoader.class, String.class, byte[].class, int.class, int.class, ProtectionDomain.class, String.class
-            );
-        }catch(ReflectiveOperationException e){
-            new RuntimeException("Failed to get ClassLoader.defineClass1", e).printStackTrace();
-            System.exit(0);
-            // Unreachable, makes javac happy
-            throw new RuntimeException("Failed to get ClassLoader.defineClass1", e);
-        }
-    }
-    
-    private static ClassLoader classLoader;
-    
-    public static void setClassLoader(ClassLoader classLoader){
-        MixinTransformer.classLoader = classLoader;
-    }
-    
+
+    private final ClassLoader classLoader;
+
     private final Set<String> seenClasses = new HashSet<>();
     private final Locker seenClassesLocker = new Locker();
-    
+
     private final IMixinTransformer parent;
     private final List<Transformer> transformers;
     private final List<Transformer> earlyTransformers;
-    
+
     private final boolean forceDump = Configuration.DUMP.get() == Configuration.DumpMode.FORCE;
     private final boolean dump = Configuration.DUMP.get() == Configuration.DumpMode.ON || forceDump;
-    
-    MixinTransformer(IMixinTransformer parent){
+
+    MixinTransformer(IMixinTransformer parent, ClassLoader classLoader) {
         this.parent = parent;
+        this.classLoader = classLoader;
         transformers = RegistryImpl.INSTANCE.getTransformers();
         earlyTransformers = RegistryImpl.INSTANCE.getEarlyTransformers();
     }
-    
-    @Override
-    public byte[] transformClassBytes(String name, String transformedName, byte[] basicClass){
-        if(seenClassesLocker.readLock(()->seenClasses.contains(name))){
+
+    public byte[] transformClassBytes(String name, String transformedName, byte[] basicClass) {
+        if (seenClassesLocker.readLock(() -> seenClasses.contains(name))) {
             return basicClass;
         }
-        if(seenClassesLocker.writeLock(()->{
-            if(seenClasses.contains(name)){
-                return true;
-            }else{
-                seenClasses.add(name);
-                return false;
-            }
-        })){
+        if (seenClassesLocker.writeLock(() -> !seenClasses.add(name))) {
             return parent.transformClassBytes(name, transformedName, basicClass);
         }
-        
+
         for(String prefix : BLACKLIST){
             if(name.startsWith(prefix)){
                 byte[] transformedClass = parent.transformClassBytes(name, transformedName, basicClass);
@@ -231,52 +198,56 @@ public class MixinTransformer extends FabricMixinTransformerProxy{
             return null;
         }
         
-        if(shouldBootstrap){
-            try{
-                ClassLoader$defineClass.invoke(
-                    (ClassLoader)null, // AKA bootstrap ClassLoader
-                    (String)null, // Let the JVM figure it out
-                    bytecode,
-                    0,
-                    bytecode.length,
-                    (ProtectionDomain)null,
-                    (String)null
+        if(shouldBootstrap) {
+            try {
+                Bootstrap.ClassLoader$defineClass.invoke(
+                        (ClassLoader) null, // AKA bootstrap ClassLoader
+                        (String) null, // Let the JVM figure it out
+                        bytecode,
+                        0,
+                        bytecode.length,
+                        (ProtectionDomain) null,
+                        (String) null
                 );
-            }catch(Throwable throwable){
+            } catch (Throwable throwable) {
                 new RuntimeException("Failed to force a class into the bootstrap ClassLoader", throwable).printStackTrace();
                 System.exit(0);
             }
-    
+
             return null;
-        }else{
+        } else {
             return bytecode;
         }
     }
-    
-    public void blacklistPackage(String name){
+
+    public void blacklistPackages(Collection<String> packages) {
+        BLACKLIST.addAll(packages);
+    }
+
+    public void blacklistPackage(String name) {
         BLACKLIST.add(name);
     }
-    
-    static class Cache extends MixinTransformer{
+
+    static class Cache extends MixinTransformer {
         private final ClassCache cache;
-    
-        Cache(IMixinTransformer parent, ClassCache cache){
-            super(parent);
+
+        Cache(IMixinTransformer parent, ClassLoader classLoader, ClassCache cache) {
+            super(parent, classLoader);
             this.cache = cache;
         }
-        
+
         @Override
-        byte[] cache(byte[] original, Supplier<byte[]> transformer){
-            if(original == null){
+        byte[] cache(byte[] original, Supplier<byte[]> transformer) {
+            if (original == null) {
                 return transformer.get();
             }
-            
+
             Optional<byte[]> result = cache.getEntry(original);
-            if(result.isPresent()){
+            if (result.isPresent()) {
                 return result.get();
-            }else{
+            } else {
                 byte[] transformed = transformer.get();
-                if(transformed != null){
+                if (transformed != null) {
                     cache.putEntry(original, transformed);
                 }
                 return transformed;

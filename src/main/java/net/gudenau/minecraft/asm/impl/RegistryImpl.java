@@ -1,32 +1,30 @@
 package net.gudenau.minecraft.asm.impl;
 
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
-import net.gudenau.minecraft.asm.api.v1.ClassCache;
 import net.gudenau.minecraft.asm.api.v1.AsmRegistry;
+import net.gudenau.minecraft.asm.api.v1.ClassCache;
 import net.gudenau.minecraft.asm.api.v1.Identifier;
 import net.gudenau.minecraft.asm.api.v1.Transformer;
 
+import java.util.*;
+import java.util.stream.Collectors;
+
 // Basic registry implementation
-public class RegistryImpl implements AsmRegistry{
+public class RegistryImpl implements AsmRegistry {
     public static final RegistryImpl INSTANCE = new RegistryImpl();
-    
+
     private final List<Transformer> earlyTransformers = new LinkedList<>();
     private final List<Transformer> transformers = new LinkedList<>();
     private final List<ClassCache> classCaches = new LinkedList<>();
-    private final Set<String> blacklist = new HashSet<>();
-    
+    final Set<String> blacklist = new HashSet<>();
+
     private volatile Boolean frozen = null;
-    
-    private RegistryImpl(){}
-    
+
+    private RegistryImpl() {
+    }
+
     @Override
-    public void registerEarlyTransformer(Transformer transformer){
-        if(frozen == null || frozen){
+    public void registerEarlyTransformer(Transformer transformer) {
+        if (frozen == null || frozen) {
             throw new RuntimeException("Attempted to register transformer outside initializer");
         }
         blacklist.add(transformer.getClass().getPackage().getName());
@@ -97,12 +95,6 @@ public class RegistryImpl implements AsmRegistry{
             this.frozen = frozen;
         }else{
             this.frozen |= frozen;
-        }
-    }
-    
-    public void setTransformer(MixinTransformer transformer){
-        for(String pack : blacklist){
-            transformer.blacklistPackage(pack);
         }
     }
 }
