@@ -1,30 +1,29 @@
 {
   "schemaVersion": 1,
-  "id": "gud_asm",
+  "id": "bytecode-junkie",
   "version": "${version}",
-
-  "name": "gudASM",
-  "description": "Lets you do weird ASM hacks with relitive ease.",
+  "name": "Bytecode Junkie",
+  "description": "Mass ASM transformations with ease, based on gudASM.",
+  "provides": [
+    "gud_asm"
+  ],
   "authors": [
-    "gudenau",
-    "Ampflower"
+    "Ampflower",
+    "gudenau"
   ],
   "contact": {
-    "homepage": "https://www.curseforge.com/minecraft/mc-mods/gudasm",
-    "sources": "https://github.com/gudenau/minecraft-gudasm"
+    "sources": "https://github.com/the-glitch-network/bytecode-junkie"
   },
-
   "license": "MPL-2.0",
-  "icon": "assets/gud_asm/icon.png",
-
+  "icon": "assets/bytecode-junkie/icon.png",
   "environment": "*",
   "entrypoints": {
-    "main": [
-      "net.gudenau.minecraft.asm.GudAsm"
+    "preLaunch": [
+      "gay.ampflower.junkie.PreLaunch"
     ]
   },
   "mixins": [
-    "gud_asm.mixins.json"
+    "bytecode-junkie.mixins.json"
   ],
 
   "depends": {

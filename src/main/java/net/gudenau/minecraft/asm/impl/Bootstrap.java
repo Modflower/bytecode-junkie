@@ -28,7 +28,7 @@ import java.util.HashSet;
 
 // Bootstraps all the mess we make.
 public class Bootstrap {
-    private static final Logger log = LogManager.getLogger("gud_asm");
+    private static final Logger log = LogManager.getLogger("Bytecode Junkie");
     private static boolean latch = false;
 
     public static boolean enableCache = false;
@@ -39,6 +39,9 @@ public class Bootstrap {
             return;
         }
         latch = true;
+
+        log.fatal("Bytecode Junkie starting up chaos with mass assembly transformations.");
+
         // Load the configuration
         try {
             Configuration.load();
@@ -82,11 +85,13 @@ public class Bootstrap {
         try {
             unsafe$generic(KnotFinder.getKnot(), cache);
         } catch (Throwable t) {
-            new RuntimeException("Failed to hook into Knot", t).printStackTrace();
-            System.exit(0);
+            log.fatal("Failed to hook into Knot", t);
+            System.exit(1);
             // Unreachable
             throw new RuntimeException("Failed to hook into Knot", t);
         }
+
+        log.fatal("A knot finder has found your knots. Classes might be slightly quilted.");
     }
 
     private static void unsafe$generic(ClassLoader classLoader, ClassCache cache) throws Throwable {

@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "gay.ampflower.junkie.internal.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "plugin": "gay.ampflower.junkie.internal.mixin.MixinBootstrap"
+}

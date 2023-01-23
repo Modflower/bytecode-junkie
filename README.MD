@@ -1,10 +1,17 @@
+# Bytecode Junkie
+
+A mass assembly transformation mod based off of GudASM by Gudenau.
+
+*The following README.MD is the original readme from GudASM.*
+
 # gudASM
 
 The ~~worst~~ best thing to happen to Fabric modding.
 
 #### TL;DR
 
-It allows you to do direct bytecode manipulation and aims to make it "easy". You should only use this when [mixins](https://github.com/SpongePowered/Mixin/wiki) really can't do what you need.
+It allows you to do direct bytecode manipulation and aims to make it "easy". You should only use this
+when [mixins](https://github.com/SpongePowered/Mixin/wiki) really can't do what you need.
 
 #### What can this do?
 
