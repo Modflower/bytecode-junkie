@@ -5,6 +5,7 @@ import net.gudenau.minecraft.asm.api.v1.AsmUtils;
 import net.gudenau.minecraft.asm.api.v1.ClassCache;
 import net.gudenau.minecraft.asm.api.v1.Transformer;
 import net.gudenau.minecraft.asm.util.Locker;
+import gay.ampflower.junkie.internal.UnsafeProxy;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Type;
@@ -18,7 +19,6 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.security.ProtectionDomain;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,7 +29,7 @@ import java.util.function.Supplier;
 /**
  * Our custom "mixin" transformer.
  */
-public class MixinTransformer extends FabricMixinTransformerProxy {
+class MixinTransformer extends FabricMixinTransformerProxy implements UnsafeProxy {
     private static final Type ANNOTATION_FORCE_BOOTLOADER = Type.getObjectType("net/gudenau/minecraft/asm/api/v1/annotation/ForceBootloader");
 
     private static final Set<String> BLACKLIST = new HashSet<>(Arrays.asList(
@@ -201,15 +201,7 @@ public class MixinTransformer extends FabricMixinTransformerProxy {
         
         if(shouldBootstrap) {
             try {
-                Bootstrap.ClassLoader$defineClass.invoke(
-                        (ClassLoader) null, // AKA bootstrap ClassLoader
-                        (String) null, // Let the JVM figure it out
-                        bytecode,
-                        0,
-                        bytecode.length,
-                        (ProtectionDomain) null,
-                        (String) null
-                );
+                Bootstrap.forceDefineClass(null, bytecode, true);
             } catch (Throwable throwable) {
                 new RuntimeException("Failed to force a class into the bootstrap ClassLoader", throwable).printStackTrace();
                 System.exit(0);

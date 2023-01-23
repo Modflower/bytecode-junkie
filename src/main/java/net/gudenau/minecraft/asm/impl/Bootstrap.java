@@ -7,6 +7,8 @@ import net.gudenau.minecraft.asm.api.v1.AsmUtils;
 import net.gudenau.minecraft.asm.api.v1.ClassCache;
 import net.gudenau.minecraft.asm.api.v1.type.MethodType;
 import net.gudenau.minecraft.asm.util.FileUtils;
+import gay.ampflower.junkie.internal.UnsafeProxy;
+import gay.ampflower.junkie.internal.definer.ClassDefiner;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.objectweb.asm.*;
@@ -21,35 +23,22 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.invoke.MethodHandle;
 import java.lang.reflect.Field;
-import java.security.ProtectionDomain;
 import java.util.HashSet;
 import java.util.Objects;
 
 // Bootstraps all the mess we make.
 public class Bootstrap {
     private static final Logger log = LogManager.getLogger("gud_asm");
-
-    static final MethodHandle ClassLoader$defineClass;
-
-    static {
-        try {
-            ClassLoader$defineClass = ReflectionHelper.findStatic(
-                    ClassLoader.class,
-                    "defineClass1",
-                    Class.class,
-                    ClassLoader.class, String.class, byte[].class, int.class, int.class, ProtectionDomain.class, String.class
-            );
-        } catch (ReflectiveOperationException e) {
-            new RuntimeException("Failed to get ClassLoader.defineClass1", e).printStackTrace();
-            System.exit(0);
-            // Unreachable, makes javac happy
-            throw new RuntimeException("Failed to get ClassLoader.defineClass1", e);
-        }
-    }
+    private static boolean latch = false;
 
     public static boolean enableCache = false;
 
     public static void setup() {
+        // Allows for multiple entrypoints.
+        if (latch) {
+            return;
+        }
+        latch = true;
         // Load the configuration
         try {
             Configuration.load();
@@ -146,9 +135,7 @@ public class Bootstrap {
             // Why didn't it load under 0.7.4 logic? Perhaps we're dealing with Quilt instead?
             transformer = loadUnsafeProxy(classLoader, originalTransformer, Type.getType(KnotClassDelegate$mixinTransformer.getClass()), cache);
         }
-        // MixinTransformer has in theory been transformed at this point, making the cast safe, even though it's
-        // normally impossible.
-        ((MixinTransformer) transformer).blacklistPackages(RegistryImpl.INSTANCE.blacklist);
+        ((UnsafeProxy) transformer).blacklistPackages(RegistryImpl.INSTANCE.blacklist);
 
         // Restore the original to keep the environment as sane as possible
         MixinEnvironment$transformer$setter.invokeExact(originalTransformer);
@@ -238,15 +225,13 @@ public class Bootstrap {
         byte[] bytecode = writer.toByteArray();
 
         Class<?> newTransformerProxy =
-                forceDefineClass(inject, bytecode);
+                forceDefineClass(inject, bytecode, false);
 
         // For some reason, Java 14 likes to load the MixinTransformer ahead of time if there's a new call for it anywhere
         // in the class. By leaving to indirection or casts, it prevents MixinTransformer from being loaded ahead of
         // time and allows the transformation to work. However, OpenJ9 may not be too happy about this, however.
         //noinspection ConstantConditions - This is valid *when transformed*
         return (IMixinTransformer) (cache != null ? new MixinTransformer.Cache(originalTransformer, inject, cache) : newTransformerProxy.getDeclaredConstructor(IMixinTransformer.class, ClassLoader.class).newInstance(originalTransformer, inject));
-        //return (IMixinTransformer) (cache != null ? new MixinTransformer.Cache(originalTransformer, inject, cache) : new MixinTransformer(originalTransformer, inject));
-        //return (IMixinTransformer) newTransformerProxy.getDeclaredConstructor(IMixinTransformer.class, ClassLoader.class).newInstance(originalTransformer, inject);
     }
 
     private static void mkProxyMethod(ClassNode classVisitor, int access, String proxiedField, Type proxied,
@@ -271,18 +256,18 @@ public class Bootstrap {
         methodVisitor.visitEnd();
     }
 
-    private static Class<?> forceDefineClass(ClassLoader loader, byte[] bytecode) throws Throwable {
-        Class<?> type = (Class<?>) Bootstrap.ClassLoader$defineClass.invoke(
-                loader,
-                (String) null, // Let the JVM figure it out
-                bytecode,
-                0,
-                bytecode.length,
-                (ProtectionDomain) null,
-                (String) null
-        );
-        // Forces initialization of the class.
-        ReflectionHelper.ensureClassInitialised(type);
-        return type;
+    static Class<?> forceDefineClass(ClassLoader loader, byte[] bytes, boolean unmangledName) throws Throwable {
+        ClassDefiner definer = ClassDefiner.getInstance();
+
+        // Pre-conditions.
+        if (unmangledName && definer.mangles()) {
+            throw new UnsupportedOperationException("JVM doesn't support lossless");
+        }
+
+        if (loader == null && definer.requiresLoader()) {
+            loader = ClassLoader.getSystemClassLoader();
+        }
+
+        return definer.define(loader, bytes);
     }
 }

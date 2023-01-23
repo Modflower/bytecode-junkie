@@ -112,12 +112,20 @@ public class ReflectionHelper{
         return IMPL_LOOKUP.findVirtual(owner, name, type).bindTo(instance);
     }
 
+    public static <O, T extends O> MethodHandle findVirtualDetached(Class<T> owner, String name, Class<?> returnType, Class<?>... params) throws ReflectiveOperationException {
+        return IMPL_LOOKUP.findVirtual(owner, name, MethodType.methodType(returnType, params));
+    }
+
     public static MethodHandle findStatic(Class<?> owner, String name, Class<?> returnType, Class<?>... params) throws ReflectiveOperationException {
         return IMPL_LOOKUP.findStatic(
                 owner,
                 name,
                 MethodType.methodType(returnType, params)
         );
+    }
+
+    public static MethodHandle unsafeDefine0() throws ReflectiveOperationException {
+        return IMPL_LOOKUP.findVirtual(MethodHandles.Lookup.class, "defineClass", MethodType.methodType(Class.class, byte[].class)).bindTo(IMPL_LOOKUP);
     }
 
     private static final class UnsafeHelper {
