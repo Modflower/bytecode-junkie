@@ -71,6 +71,14 @@ public class ReflectionHelper{
         return null;
     }
 
+    public static MethodHandle getGetter(Field field) throws ReflectiveOperationException {
+        return IMPL_LOOKUP.unreflectGetter(field);
+    }
+
+    public static MethodHandle getGetter(Object instance, Field field) throws ReflectiveOperationException {
+        return IMPL_LOOKUP.unreflectGetter(field).bindTo(instance);
+    }
+
     public static MethodHandle findGetter(Class<?> owner, String name, Class<?> type) throws ReflectiveOperationException {
         return IMPL_LOOKUP.findGetter(owner, name, type);
     }
@@ -81,6 +89,14 @@ public class ReflectionHelper{
 
     public static MethodHandle findStaticGetter(Class<?> owner, String name, Class<?> type) throws ReflectiveOperationException {
         return IMPL_LOOKUP.findStaticGetter(owner, name, type);
+    }
+
+    public static MethodHandle getSetter(Field field) throws ReflectiveOperationException {
+        return IMPL_LOOKUP.unreflectSetter(field);
+    }
+
+    public static MethodHandle getSetter(Object instance, Field field) throws ReflectiveOperationException {
+        return IMPL_LOOKUP.unreflectSetter(field).bindTo(instance);
     }
 
     public static MethodHandle findSetter(Class<?> owner, String name, Class<?> type) throws ReflectiveOperationException {

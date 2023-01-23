@@ -7,6 +7,7 @@ import net.gudenau.minecraft.asm.api.v1.AsmUtils;
 import net.gudenau.minecraft.asm.api.v1.ClassCache;
 import net.gudenau.minecraft.asm.api.v1.type.MethodType;
 import net.gudenau.minecraft.asm.util.FileUtils;
+import gay.ampflower.junkie.internal.KnotFinder;
 import gay.ampflower.junkie.internal.UnsafeProxy;
 import gay.ampflower.junkie.internal.definer.ClassDefiner;
 import org.apache.logging.log4j.LogManager;
@@ -18,13 +19,12 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.spongepowered.asm.mixin.MixinEnvironment;
 import org.spongepowered.asm.mixin.transformer.IMixinTransformer;
+import org.spongepowered.asm.transformers.MixinClassWriter;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.invoke.MethodHandle;
-import java.lang.reflect.Field;
 import java.util.HashSet;
-import java.util.Objects;
 
 // Bootstraps all the mess we make.
 public class Bootstrap {
@@ -79,10 +79,8 @@ public class Bootstrap {
         }
 
         // Hack into knot.
-        ClassLoader classLoader = Bootstrap.class.getClassLoader();
-
         try {
-            unsafe$generic(classLoader, cache);
+            unsafe$generic(KnotFinder.getKnot(), cache);
         } catch (Throwable t) {
             new RuntimeException("Failed to hook into Knot", t).printStackTrace();
             System.exit(0);
@@ -92,31 +90,8 @@ public class Bootstrap {
     }
 
     private static void unsafe$generic(ClassLoader classLoader, ClassCache cache) throws Throwable {
-        Class<? extends ClassLoader> KnotClassLoader = classLoader.getClass();
-
-        Class<?> KnotClassDelegate;
-        Class<?> transformerClass;
-        Object KnotClassLoader$delegate;
-
-        {
-            Field tmp = ReflectionHelper.findField(KnotClassLoader, "mixinTransformer");
-            if (tmp != null) {
-                KnotClassDelegate = KnotClassLoader;
-                transformerClass = tmp.getType();
-                KnotClassLoader$delegate = classLoader;
-            } else {
-                KnotClassDelegate = Objects.requireNonNull(ReflectionHelper.findField(KnotClassLoader, "delegate"), "NoSuchField: KnotClassLoader/delegate").getType();
-                transformerClass = Objects.requireNonNull(ReflectionHelper.findField(KnotClassDelegate, "mixinTransformer"), "NoSuchField: KnotClassDelegate/mixinTransformer").getType();
-
-                // Get the class delegate
-                MethodHandle KnotClassLoader$delegate$getter = ReflectionHelper.findGetter(KnotClassLoader, classLoader, "delegate", KnotClassDelegate);
-                KnotClassLoader$delegate = KnotClassLoader$delegate$getter.invoke();
-            }
-        }
-
         // Get the transformer proxy as Object
-        MethodHandle KnotClassDelegate$mixinTransformer$getter = ReflectionHelper.findGetter(KnotClassDelegate, KnotClassLoader$delegate, "mixinTransformer", transformerClass);
-        Object KnotClassDelegate$mixinTransformer = KnotClassDelegate$mixinTransformer$getter.invoke();
+        Object KnotClassDelegate$mixinTransformer = KnotFinder.getTransformer();
 
         // Get the environment's transformer.
         MethodHandle MixinEnvironment$transformer$getter = ReflectionHelper.findStaticGetter(MixinEnvironment.class, "transformer", IMixinTransformer.class);
@@ -141,8 +116,7 @@ public class Bootstrap {
         MixinEnvironment$transformer$setter.invokeExact(originalTransformer);
 
         // Set our custom transformer so it will be used in future class loads
-        MethodHandle KnotClassDelegate$mixinTransformer$setter = ReflectionHelper.findSetter(KnotClassDelegate, KnotClassLoader$delegate, "mixinTransformer", transformerClass);
-        KnotClassDelegate$mixinTransformer$setter.invoke(transformer);
+        KnotFinder.setTransformer(transformer);
     }
 
     /**
@@ -174,8 +148,13 @@ public class Bootstrap {
 
             // Load the entire required structure into the final transformer.
             unsafeReader.accept(unsafeTransformer, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            unsafeTransformer.access |= Opcodes.ACC_PUBLIC;
 
             for (MethodNode method : unsafeTransformer.methods) {
+                if ("<init>".equals(method.name)) {
+                    method.access |= Opcodes.ACC_PUBLIC;
+                }
+
                 methods.add(new Method(method.name, method.desc));
             }
 
@@ -256,7 +235,16 @@ public class Bootstrap {
         methodVisitor.visitEnd();
     }
 
-    static Class<?> forceDefineClass(ClassLoader loader, byte[] bytes, boolean unmangledName) throws Throwable {
+    public static ClassWriter createClassWriter(int flags, ClassLoader loader) {
+        return new MixinClassWriter(flags) {
+            @Override
+            protected ClassLoader getClassLoader() {
+                return loader;
+            }
+        };
+    }
+
+    public static Class<?> forceDefineClass(ClassLoader loader, byte[] bytes, boolean unmangledName) throws Throwable {
         ClassDefiner definer = ClassDefiner.getInstance();
 
         // Pre-conditions.

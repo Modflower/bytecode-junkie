@@ -12,7 +12,6 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.transformer.FabricMixinTransformerProxy;
 import org.spongepowered.asm.mixin.transformer.IMixinTransformer;
-import org.spongepowered.asm.transformers.MixinClassWriter;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -164,13 +163,7 @@ class MixinTransformer extends FabricMixinTransformerProxy implements UnsafeProx
             return bytecode;
         }
 
-        ClassWriter writer = new MixinClassWriter(flags.getClassWriterFlags()) {
-            // Fixes an issue with stack calculations
-            @Override
-            protected ClassLoader getClassLoader() {
-                return classLoader;
-            }
-        };
+        ClassWriter writer = Bootstrap.createClassWriter(flags.getClassWriterFlags(), classLoader);
         classNode.accept(writer);
         parentModifier.set(true);
         return writer.toByteArray();
