@@ -3,6 +3,7 @@ package net.gudenau.minecraft.asm.impl;
 import net.fabricmc.loader.api.FabricLoader;
 import net.gudenau.minecraft.asm.api.v1.AsmUtils;
 import net.gudenau.minecraft.asm.api.v1.ClassCache;
+import net.gudenau.minecraft.asm.api.v1.RawTransformer;
 import net.gudenau.minecraft.asm.api.v1.Transformer;
 import net.gudenau.minecraft.asm.util.Locker;
 import gay.ampflower.junkie.internal.UnsafeProxy;
@@ -47,6 +48,8 @@ class MixinTransformer extends FabricMixinTransformerProxy implements UnsafeProx
     private final Locker seenClassesLocker = new Locker();
 
     private final IMixinTransformer parent;
+    private final List<RawTransformer> rawTransformers;
+    private final List<RawTransformer> earlyRawTransformers;
     private final List<Transformer> transformers;
     private final List<Transformer> earlyTransformers;
 
@@ -56,6 +59,8 @@ class MixinTransformer extends FabricMixinTransformerProxy implements UnsafeProx
     MixinTransformer(IMixinTransformer parent, ClassLoader classLoader) {
         this.parent = parent;
         this.classLoader = classLoader;
+        earlyRawTransformers = RegistryImpl.INSTANCE.getEarlyRawTransformers();
+        rawTransformers = RegistryImpl.INSTANCE.getRawTransformers();
         transformers = RegistryImpl.INSTANCE.getTransformers();
         earlyTransformers = RegistryImpl.INSTANCE.getEarlyTransformers();
     }
@@ -86,8 +91,8 @@ class MixinTransformer extends FabricMixinTransformerProxy implements UnsafeProx
             AtomicBoolean modified = new AtomicBoolean(forceDump);
             
             byte[] bytecode = basicClass;
-            if(!earlyTransformers.isEmpty()){
-                bytecode = transform(name, transformedName, bytecode, earlyTransformers, modified);
+            if(!earlyTransformers.isEmpty() || !earlyRawTransformers.isEmpty()){
+                bytecode = transform(name, transformedName, bytecode, earlyRawTransformers, earlyTransformers, modified);
             }
             
             bytecode = parent.transformClassBytes(name, transformedName, bytecode);
@@ -99,8 +104,13 @@ class MixinTransformer extends FabricMixinTransformerProxy implements UnsafeProx
                 newList.add(BOOTSTRAP_TRANSFORMER);
                 transformers = newList;
             }
-            if(!transformers.isEmpty()){
-                bytecode = transform(name, transformedName, bytecode, transformers, modified);
+            List<RawTransformer> rawTransformers = this.rawTransformers;
+            if(shouldBootstrap){
+                List<RawTransformer> newList = new ArrayList<>(this.rawTransformers);;
+                rawTransformers = newList;
+            }
+            if(!transformers.isEmpty() || !rawTransformers.isEmpty()){
+                bytecode = transform(name, transformedName, bytecode, rawTransformers, transformers, modified);
             }
             
             if(dump && modified.get()){
@@ -140,7 +150,13 @@ class MixinTransformer extends FabricMixinTransformerProxy implements UnsafeProx
         });
     }
     
-    private byte[] transform(String name, String transformedName, byte[] bytecode, List<Transformer> transformers, AtomicBoolean parentModifier){
+    private byte[] transform(String name, String transformedName, byte[] bytecode, List<RawTransformer> rawTransformers, List<Transformer> transformers, AtomicBoolean parentModifier){
+        List<RawTransformer> validRawTransformers = new ArrayList<>();
+        for(RawTransformer transformer : rawTransformers){
+            if(transformer.handlesClass(name, transformedName)){
+                validRawTransformers.add(transformer);
+            }
+        }
         List<Transformer> validTransformers = new ArrayList<>();
         for(Transformer transformer : transformers){
             if(transformer.handlesClass(name, transformedName)){
@@ -148,14 +164,19 @@ class MixinTransformer extends FabricMixinTransformerProxy implements UnsafeProx
             }
         }
         
-        if(validTransformers.isEmpty()){
+        if(validTransformers.isEmpty() && rawTransformers.isEmpty()){
             return bytecode;
+        }
+        TransformerFlagsImpl flags = new TransformerFlagsImpl();
+
+        for(RawTransformer transformer : validRawTransformers){
+            bytecode = transformer.transform(bytecode, flags);
         }
         
         ClassNode classNode = new ClassNode();
         new ClassReader(bytecode).accept(classNode, 0);
         boolean modified = false;
-        TransformerFlagsImpl flags = new TransformerFlagsImpl();
+
         for(Transformer transformer : validTransformers){
             modified |= transformer.transform(classNode, flags);
         }

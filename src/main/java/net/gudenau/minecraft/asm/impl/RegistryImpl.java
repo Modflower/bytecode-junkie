@@ -1,9 +1,6 @@
 package net.gudenau.minecraft.asm.impl;
 
-import net.gudenau.minecraft.asm.api.v1.AsmRegistry;
-import net.gudenau.minecraft.asm.api.v1.ClassCache;
-import net.gudenau.minecraft.asm.api.v1.Identifier;
-import net.gudenau.minecraft.asm.api.v1.Transformer;
+import net.gudenau.minecraft.asm.api.v1.*;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -13,6 +10,8 @@ public class RegistryImpl implements AsmRegistry {
     public static final RegistryImpl INSTANCE = new RegistryImpl();
 
     private final List<Transformer> earlyTransformers = new LinkedList<>();
+    private final List<RawTransformer> earlyRawTransformers = new LinkedList<>();
+    private final List<RawTransformer> rawTransformers = new LinkedList<>();
     private final List<Transformer> transformers = new LinkedList<>();
     private final List<ClassCache> classCaches = new LinkedList<>();
     final Set<String> blacklist = new HashSet<>();
@@ -38,6 +37,24 @@ public class RegistryImpl implements AsmRegistry {
         }
         blacklist.add(transformer.getClass().getPackage().getName());
         transformers.add(transformer);
+    }
+
+    @Override
+    public void registerEarlyRawTransformer(RawTransformer transformer) {
+        if (frozen == null || frozen){
+            throw new RuntimeException("Attempted to register transformer outside initializer");
+        }
+        blacklist.add(transformer.getClass().getPackage().getName());
+        earlyRawTransformers.add(transformer);
+    }
+
+    @Override
+    public void registerRawTransformer(RawTransformer transformer){
+        if(frozen == null || frozen){
+            throw new RuntimeException("Attempted to register transformer outside initializer");
+        }
+        blacklist.add(transformer.getClass().getPackage().getName());
+        rawTransformers.add(transformer);
     }
     
     @Override
@@ -79,6 +96,14 @@ public class RegistryImpl implements AsmRegistry {
     
     public List<String> getCacheNames(){
         return classCaches.stream().map(ClassCache::getName).map(Identifier::toString).collect(Collectors.toList());
+    }
+
+    public List<RawTransformer> getRawTransformers(){
+        return rawTransformers;
+    }
+
+    public List<RawTransformer> getEarlyRawTransformers(){
+        return earlyRawTransformers;
     }
     
     public List<Transformer> getTransformers(){
