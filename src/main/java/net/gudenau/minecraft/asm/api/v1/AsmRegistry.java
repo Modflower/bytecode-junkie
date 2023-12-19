@@ -32,6 +32,24 @@ public interface AsmRegistry{
      * @param transformer The transformer to register
      * */
     void registerTransformer(Transformer transformer);
+
+    /**
+     * Registers a class transformer for transforming classes before mixins.
+     *
+     * This one should not be used unless it is 100% required.
+     *
+     * @param transformer The transformer to register
+     * */
+    void registerEarlyRawTransformer(RawTransformer transformer);
+
+    /**
+     * Registers a class transformer for transforming classes after mixins.
+     *
+     * This is the most compatible one.
+     *
+     * @param transformer The transformer to register
+     * */
+    void registerRawTransformer(RawTransformer transformer);
     
     /**
      * Registers a class cache.
