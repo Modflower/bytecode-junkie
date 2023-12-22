@@ -25,9 +25,7 @@ public interface RawTransformer{
      * Transforms a class.
      *
      * @param classBytes The raw class that is being transformer
-     * @param flags Various flags that might be useful
-     *
      * @return The transformed class bytes
-     * */
-    byte[] transform(byte[] classBytes, Transformer.Flags flags);
+     */
+    byte[] transform(byte[] classBytes);
 }

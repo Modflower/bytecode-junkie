@@ -1,12 +1,12 @@
 package net.gudenau.minecraft.asm.impl;
 
+import gay.ampflower.junkie.internal.UnsafeProxy;
 import net.fabricmc.loader.api.FabricLoader;
 import net.gudenau.minecraft.asm.api.v1.AsmUtils;
 import net.gudenau.minecraft.asm.api.v1.ClassCache;
 import net.gudenau.minecraft.asm.api.v1.RawTransformer;
 import net.gudenau.minecraft.asm.api.v1.Transformer;
 import net.gudenau.minecraft.asm.util.Locker;
-import gay.ampflower.junkie.internal.UnsafeProxy;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Type;
@@ -92,25 +92,13 @@ class MixinTransformer extends FabricMixinTransformerProxy implements UnsafeProx
             
             byte[] bytecode = basicClass;
             if(!earlyTransformers.isEmpty() || !earlyRawTransformers.isEmpty()){
-                bytecode = transform(name, transformedName, bytecode, earlyRawTransformers, earlyTransformers, modified);
+                bytecode = transform(name, transformedName, bytecode, earlyRawTransformers, earlyTransformers, modified, false);
             }
             
             bytecode = parent.transformClassBytes(name, transformedName, bytecode);
-    
-            //FIXME, this is stupid
-            List<Transformer> transformers = this.transformers;
-            if(shouldBootstrap){
-                List<Transformer> newList = new ArrayList<>(this.transformers);
-                newList.add(BOOTSTRAP_TRANSFORMER);
-                transformers = newList;
-            }
-            List<RawTransformer> rawTransformers = this.rawTransformers;
-            if(shouldBootstrap){
-                List<RawTransformer> newList = new ArrayList<>(this.rawTransformers);;
-                rawTransformers = newList;
-            }
+
             if(!transformers.isEmpty() || !rawTransformers.isEmpty()){
-                bytecode = transform(name, transformedName, bytecode, rawTransformers, transformers, modified);
+                bytecode = transform(name, transformedName, bytecode, rawTransformers, transformers, modified, shouldBootstrap);
             }
             
             if(dump && modified.get()){
@@ -141,46 +129,49 @@ class MixinTransformer extends FabricMixinTransformerProxy implements UnsafeProx
             if(!Files.exists(path)){
                 try{
                     Files.createDirectories(path);
-                }catch(IOException ignored){}
+                } catch (IOException ignored) {
+                }
             }
             path = path.resolve(split[split.length - 1] + ".class");
-            try(OutputStream stream = Files.newOutputStream(path, StandardOpenOption.CREATE)){
+            try (OutputStream stream = Files.newOutputStream(path, StandardOpenOption.CREATE)) {
                 stream.write(bytecode);
-            }catch(IOException ignored){}
+            } catch (IOException ignored) {
+            }
         });
     }
-    
-    private byte[] transform(String name, String transformedName, byte[] bytecode, List<RawTransformer> rawTransformers, List<Transformer> transformers, AtomicBoolean parentModifier){
-        List<RawTransformer> validRawTransformers = new ArrayList<>();
-        for(RawTransformer transformer : rawTransformers){
-            if(transformer.handlesClass(name, transformedName)){
-                validRawTransformers.add(transformer);
+
+    private byte[] transform(String name, String transformedName, byte[] bytecode,
+                             List<RawTransformer> rawTransformers, List<Transformer> transformers,
+                             AtomicBoolean parentModifier, final boolean shouldBootstrap) {
+        for (RawTransformer transformer : rawTransformers) {
+            if (transformer.handlesClass(name, transformedName)) {
+                bytecode = transformer.transform(bytecode);
             }
         }
-        List<Transformer> validTransformers = new ArrayList<>();
-        for(Transformer transformer : transformers){
-            if(transformer.handlesClass(name, transformedName)){
-                validTransformers.add(transformer);
-            }
-        }
-        
-        if(validTransformers.isEmpty() && rawTransformers.isEmpty()){
-            return bytecode;
-        }
+
+        ClassNode classNode = null;
+        boolean modified = false;
         TransformerFlagsImpl flags = new TransformerFlagsImpl();
 
-        for(RawTransformer transformer : validRawTransformers){
-            bytecode = transformer.transform(bytecode, flags);
-        }
-        
-        ClassNode classNode = new ClassNode();
-        new ClassReader(bytecode).accept(classNode, 0);
-        boolean modified = false;
+        for (Transformer transformer : transformers) {
+            if (transformer.handlesClass(name, transformedName)) {
+                if (classNode == null) {
+                    classNode = toClassNode(bytecode);
+                }
 
-        for(Transformer transformer : validTransformers){
-            modified |= transformer.transform(classNode, flags);
+                modified |= transformer.transform(classNode, flags);
+            }
         }
-        if(!modified){
+
+        if (shouldBootstrap) {
+            if (classNode == null) {
+                classNode = toClassNode(bytecode);
+            }
+
+            modified |= BOOTSTRAP_TRANSFORMER.transform(classNode, flags);
+        }
+
+        if (!modified) {
             return bytecode;
         }
 
@@ -189,13 +180,19 @@ class MixinTransformer extends FabricMixinTransformerProxy implements UnsafeProx
         parentModifier.set(true);
         return writer.toByteArray();
     }
-    
-    byte[] cache(byte[] original, Supplier<byte[]> transformed){
+
+    private ClassNode toClassNode(byte[] bytecode) {
+        final ClassNode classNode = new ClassNode();
+        new ClassReader(bytecode).accept(classNode, 0);
+        return classNode;
+    }
+
+    byte[] cache(byte[] original, Supplier<byte[]> transformed) {
         return transformed.get();
     }
-    
-    private boolean shouldBootstrap(byte[] bytecode){
-        if(bytecode == null){
+
+    private boolean shouldBootstrap(byte[] bytecode) {
+        if (bytecode == null) {
             return false;
         }
     
